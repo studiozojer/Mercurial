@@ -163,6 +163,10 @@ public final class GestureCoordinator: @unchecked Sendable {
     private var velocityLastTime: CFTimeInterval = 0
     private var velocitySmoothed: CGPoint = .zero
 
+    // Single-finger pan during zoom state
+    private var singleFingerPanAnchor: CGPoint = .zero
+    private var singleFingerPanStartOffset: CGPoint = .zero
+
     // MARK: - Initialization
 
     /// Creates a gesture coordinator with optional configuration.
@@ -510,6 +514,40 @@ public final class GestureCoordinator: @unchecked Sendable {
         velocityLastLocation = location
         velocityLastTime = CACurrentMediaTime()
         // Note: We intentionally do NOT reset velocitySmoothed here
+    }
+
+    // MARK: - Single-Finger Pan During Zoom
+
+    /// Begins single-finger panning while maintaining zoom state.
+    ///
+    /// Call this when transitioning from two-finger pinch to one-finger drag
+    /// (e.g., user lifts one finger during a pinch gesture). This captures the
+    /// current location as an anchor point and preserves the current offset
+    /// for relative calculations.
+    ///
+    /// - Parameter location: The gesture location when transition occurred
+    public func beginSingleFingerPanDuringZoom(at location: CGPoint) {
+        singleFingerPanAnchor = location
+        singleFingerPanStartOffset = transform.offset
+    }
+
+    /// Updates single-finger pan position during zoom.
+    ///
+    /// Call this during gesture `.changed` events when only one finger is down
+    /// but the gesture started as a pinch. The offset is updated relative to
+    /// the anchor captured in `beginSingleFingerPanDuringZoom`.
+    ///
+    /// - Parameter location: Current gesture location
+    public func updateSingleFingerPanDuringZoom(to location: CGPoint) {
+        let panDelta = CGPoint(
+            x: location.x - singleFingerPanAnchor.x,
+            y: location.y - singleFingerPanAnchor.y
+        )
+        let newOffset = CGPoint(
+            x: singleFingerPanStartOffset.x + panDelta.x,
+            y: singleFingerPanStartOffset.y + panDelta.y
+        )
+        setTransform(transform.withOffset(newOffset))
     }
 
     // MARK: - Animation Update
