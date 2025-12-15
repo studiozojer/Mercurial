@@ -275,6 +275,50 @@ public final class GestureCoordinator: @unchecked Sendable {
         setTransform(scaledTransform)
     }
 
+    /// Called when a combined zoom+pan gesture changes.
+    ///
+    /// Use this when you want pinch gestures to support simultaneous panning
+    /// (i.e., moving two fingers while pinching translates the content 1:1).
+    ///
+    /// - Parameters:
+    ///   - scale: Cumulative scale from gesture start (1.0 = no change)
+    ///   - anchor: Fixed anchor point in viewport space (where gesture started)
+    ///   - panDelta: Translation since gesture start (currentPosition - startPosition)
+    ///   - center: Canvas center point
+    public func zoomPanChanged(
+        scale: CGFloat,
+        anchor: CGPoint,
+        panDelta: CGPoint,
+        center: CGPoint
+    ) {
+        if state != .zooming {
+            zoomBegan()
+        }
+
+        // Create transform at start state
+        let startTransform = Transform(
+            scale: zoomStartScale,
+            offset: zoomStartOffset,
+            configuration: configuration.transform
+        )
+
+        // Apply zoom at the fixed anchor point
+        let scaledTransform = startTransform.scaled(
+            by: scale,
+            anchor: anchor,
+            center: center
+        )
+
+        // Add pan delta (1:1 with finger movement)
+        let combinedOffset = CGPoint(
+            x: scaledTransform.offset.x + panDelta.x,
+            y: scaledTransform.offset.y + panDelta.y
+        )
+
+        let finalTransform = scaledTransform.withOffset(combinedOffset)
+        setTransform(finalTransform)
+    }
+
     /// Called when a zoom gesture ends.
     ///
     /// - Parameter center: Canvas center point
