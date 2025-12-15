@@ -227,11 +227,7 @@ final class GestureCoordinatorTransitionTests: XCTestCase {
         coordinator.panBegan()
         coordinator.panChanged(CGPoint(x: 50, y: 30), center: center)
 
-        coordinator.transitionFromPanToZoom(
-            currentScale: 1.0,
-            currentTranslation: CGPoint(x: 50, y: 30),
-            center: center
-        )
+        coordinator.transitionFromPanToZoom(currentScale: 1.0, center: center)
 
         XCTAssertEqual(coordinator.state, .zooming)
     }
@@ -243,16 +239,33 @@ final class GestureCoordinatorTransitionTests: XCTestCase {
 
         let transformBeforeTransition = coordinator.transform
 
-        coordinator.transitionFromPanToZoom(
-            currentScale: 1.0,
-            currentTranslation: CGPoint(x: 50, y: 30),
-            center: center
-        )
+        coordinator.transitionFromPanToZoom(currentScale: 1.0, center: center)
 
         // Transform should remain unchanged immediately after transition
         XCTAssertEqual(coordinator.transform.scale, transformBeforeTransition.scale, accuracy: 0.001)
         XCTAssertEqual(coordinator.transform.offset.x, transformBeforeTransition.offset.x, accuracy: 0.001)
         XCTAssertEqual(coordinator.transform.offset.y, transformBeforeTransition.offset.y, accuracy: 0.001)
+    }
+
+    func testTransitionFromPanToZoomHandlesCumulativeScale() {
+        let coordinator = GestureCoordinator()
+
+        // Start with a zoom to 2x
+        coordinator.zoomChanged(scale: 2.0, anchor: center, center: center)
+        coordinator.zoomEnded(center: center)
+
+        // Pan around
+        coordinator.panBegan()
+        coordinator.panChanged(CGPoint(x: 50, y: 30), center: center)
+
+        // Transition to zoom - gesture reports cumulative scale of 2.0 from original gesture
+        coordinator.transitionFromPanToZoom(currentScale: 2.0, center: center)
+
+        // Now zoom a tiny bit more - gesture reports 2.1 (5% more than baseline)
+        coordinator.zoomChanged(scale: 2.1, anchor: center, center: center)
+
+        // Scale should be 2.0 * (2.1 / 2.0) = 2.1, NOT 2.0 * 2.1 = 4.2
+        XCTAssertEqual(coordinator.transform.scale, 2.1, accuracy: 0.01)
     }
 
     func testNormalPanDoesNotUseBaseline() {

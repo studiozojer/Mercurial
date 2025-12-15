@@ -156,6 +156,7 @@ public final class GestureCoordinator: @unchecked Sendable {
     private var dragTranslationBaseline: CGPoint = .zero
     private var zoomStartScale: CGFloat = 1.0
     private var zoomStartOffset: CGPoint = .zero
+    private var zoomScaleBaseline: CGFloat = 1.0
 
     // MARK: - Initialization
 
@@ -253,6 +254,7 @@ public final class GestureCoordinator: @unchecked Sendable {
         momentumAnimator.stop()
         zoomStartScale = transform.scale
         zoomStartOffset = transform.offset
+        zoomScaleBaseline = 1.0
         setState(.zooming)
     }
 
@@ -267,6 +269,9 @@ public final class GestureCoordinator: @unchecked Sendable {
             zoomBegan()
         }
 
+        // Compute effective scale relative to baseline (handles mid-gesture transitions)
+        let effectiveScale = scale / zoomScaleBaseline
+
         // Create transform at start state, then scale from anchor
         let startTransform = Transform(
             scale: zoomStartScale,
@@ -275,7 +280,7 @@ public final class GestureCoordinator: @unchecked Sendable {
         )
 
         var scaledTransform = startTransform.scaled(
-            by: scale,
+            by: effectiveScale,
             anchor: anchor,
             center: center
         )
@@ -314,6 +319,9 @@ public final class GestureCoordinator: @unchecked Sendable {
             zoomBegan()
         }
 
+        // Compute effective scale relative to baseline (handles mid-gesture transitions)
+        let effectiveScale = scale / zoomScaleBaseline
+
         // Create transform at start state
         let startTransform = Transform(
             scale: zoomStartScale,
@@ -323,7 +331,7 @@ public final class GestureCoordinator: @unchecked Sendable {
 
         // Apply zoom at the fixed anchor point
         let scaledTransform = startTransform.scaled(
-            by: scale,
+            by: effectiveScale,
             anchor: anchor,
             center: center
         )
@@ -395,20 +403,17 @@ public final class GestureCoordinator: @unchecked Sendable {
     ///
     /// - Parameters:
     ///   - currentScale: The gesture's current cumulative scale at transition
-    ///   - currentTranslation: The gesture's current cumulative translation at transition
     ///   - center: Canvas center point
     public func transitionFromPanToZoom(
         currentScale: CGFloat,
-        currentTranslation: CGPoint,
         center: CGPoint
     ) {
         momentumAnimator.stop()
-        // The current transform already reflects where we are.
-        // We need to set zoomStart values such that applying currentScale
-        // and currentTranslation would reproduce the current transform.
-        // Since we're starting fresh from current state:
-        zoomStartScale = transform.scale / currentScale
+        // Capture current state as the starting point
+        zoomStartScale = transform.scale
         zoomStartOffset = transform.offset
+        // Set baseline so effectiveScale = scale / baseline starts at 1.0
+        zoomScaleBaseline = currentScale
         setState(.zooming)
     }
 
