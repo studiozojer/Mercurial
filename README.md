@@ -268,6 +268,91 @@ animator.update() -> Bool
 animator.rubberBandOffset(_ rawOffset: CGPoint) -> CGPoint  // For drag rubber-banding
 ```
 
+## Pan/Zoom with GestureCoordinator
+
+The `GestureCoordinator` provides a complete solution for pan and zoom gestures:
+
+```swift
+import Mercurial
+
+@MainActor
+class CanvasViewModel {
+    let coordinator = GestureCoordinator(configuration: .init(
+        transform: TransformConfiguration(minScale: 0.5, maxScale: 5.0),
+        contentBounds: PhysicsBounds(
+            min: CGPoint(x: -500, y: -500),
+            max: CGPoint(x: 500, y: 500)
+        )
+    ))
+
+    // Handle pan gesture
+    func onPanChanged(_ translation: CGPoint, center: CGPoint) {
+        coordinator.panChanged(translation, center: center)
+    }
+
+    func onPanEnded(velocity: CGPoint, center: CGPoint) {
+        coordinator.panEnded(velocity: velocity, center: center)
+    }
+
+    // Handle zoom gesture
+    func onZoomChanged(scale: CGFloat, anchor: CGPoint, center: CGPoint) {
+        coordinator.zoomChanged(scale: scale, anchor: anchor, center: center)
+    }
+
+    func onZoomEnded(center: CGPoint) {
+        coordinator.zoomEnded(center: center)
+    }
+}
+```
+
+### Transform for Coordinate Conversion
+
+Use `Transform` for viewport ↔ canvas coordinate conversion:
+
+```swift
+let transform = Transform(scale: 2.0, offset: CGPoint(x: 100, y: 50))
+let center = CGPoint(x: 200, y: 200)
+
+// Convert tap location to canvas space for hit testing
+let canvasPoint = transform.toCanvas(tapLocation, center: center)
+
+// Convert canvas point to viewport space for rendering
+let viewportPoint = transform.toViewport(nodePosition, center: center)
+
+// Element scaling (scales slower than content for usability)
+let textSize = baseFontSize * transform.textScale()   // At 3x: 1.8x
+let hitRadius = baseRadius * transform.hitAreaScale() // At 3x: 1.6x
+```
+
+### Hit Testing
+
+Transform-aware hit testing for interactive elements:
+
+```swift
+struct MapPin: Hittable {
+    let id: String
+    var position: CGPoint
+    var hitRadius: CGFloat { 22 }  // 44pt touch target
+}
+
+let pins = [MapPin(id: "home", x: 100, y: 200), ...]
+
+// Hit test with transform
+let result = HitTest.test(
+    at: tapLocation,
+    in: pins,
+    transform: coordinator.transform,
+    center: center
+)
+
+if let closest = result.closest {
+    print("Tapped: \(closest.id)")
+}
+
+// Or use coordinator convenience method
+let result = coordinator.hitTest(at: tapLocation, in: pins, center: center)
+```
+
 ## Usage with SwiftUI
 
 ### TimelineView Pattern
@@ -306,9 +391,9 @@ struct MomentumScrollView: View {
 
 ## Roadmap
 
-- [ ] **2D Panning** - Full canvas panning with momentum and boundaries
-- [ ] **Zooming** - Pinch-to-zoom with min/max scale limits, anchor point math
-- [ ] **Hit Testing** - Transform-aware hit detection with configurable hit radii
+- [x] **2D Panning** - Full canvas panning with momentum and boundaries
+- [x] **Zooming** - Pinch-to-zoom with min/max scale limits, anchor point math
+- [x] **Hit Testing** - Transform-aware hit detection with configurable hit radii
 - [ ] **Trackpad Support** - macOS trackpad gestures (scroll, pinch, rotate)
 
 ## License

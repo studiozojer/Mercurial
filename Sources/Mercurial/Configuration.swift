@@ -10,7 +10,7 @@ import CoreGraphics
 // MARK: - Momentum Configuration
 
 /// Configuration for momentum-based scrolling/panning.
-public struct MomentumConfiguration: Sendable {
+public struct MomentumConfiguration: Equatable, Sendable {
     /// Friction coefficient (0.0-1.0).
     /// At 0.95, velocity decays to ~5% after 60 frames (~1 second at 60fps).
     public var friction: CGFloat
@@ -47,7 +47,7 @@ public struct MomentumConfiguration: Sendable {
 // MARK: - Spring Configuration
 
 /// Configuration for spring-based boundary bounce.
-public struct SpringConfiguration: Sendable {
+public struct SpringConfiguration: Equatable, Sendable {
     /// Spring constant k (higher = stronger pull toward rest).
     public var stiffness: CGFloat
 
@@ -78,7 +78,7 @@ public struct SpringConfiguration: Sendable {
 // MARK: - Rubber Band Configuration
 
 /// Configuration for rubber-band resistance at boundaries.
-public struct RubberBandConfiguration: Sendable {
+public struct RubberBandConfiguration: Equatable, Sendable {
     /// Resistance coefficient (0.0-1.0).
     /// Higher values = less resistance = offset approaches limit faster.
     public var coefficient: CGFloat
@@ -108,7 +108,7 @@ public struct RubberBandConfiguration: Sendable {
 // MARK: - Combined Configuration
 
 /// Complete physics configuration combining all physics behaviors.
-public struct PhysicsConfiguration: Sendable {
+public struct PhysicsConfiguration: Equatable, Sendable {
     public var momentum: MomentumConfiguration
     public var spring: SpringConfiguration
     public var rubberBand: RubberBandConfiguration
@@ -131,7 +131,7 @@ public struct PhysicsConfiguration: Sendable {
 // MARK: - Bounds
 
 /// Defines scrollable/pannable bounds with optional per-axis constraints.
-public struct PhysicsBounds: Sendable {
+public struct PhysicsBounds: Equatable, Sendable {
     /// Minimum allowed position.
     public var min: CGPoint
 
