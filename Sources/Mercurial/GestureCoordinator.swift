@@ -153,6 +153,7 @@ public final class GestureCoordinator: @unchecked Sendable {
     private var momentumAnimator: Momentum2DAnimator
     private var lastUpdateTime: CFTimeInterval = 0
     private var dragStartOffset: CGPoint = .zero
+    private var dragTranslationBaseline: CGPoint = .zero
     private var zoomStartScale: CGFloat = 1.0
     private var zoomStartOffset: CGPoint = .zero
 
@@ -179,6 +180,7 @@ public final class GestureCoordinator: @unchecked Sendable {
     public func panBegan() {
         momentumAnimator.stop()
         dragStartOffset = transform.offset
+        dragTranslationBaseline = .zero
         setState(.dragging)
     }
 
@@ -192,9 +194,15 @@ public final class GestureCoordinator: @unchecked Sendable {
             panBegan()
         }
 
+        // Subtract baseline to handle mid-gesture transitions (e.g., zoom → pan)
+        let effectiveTranslation = CGPoint(
+            x: translation.x - dragTranslationBaseline.x,
+            y: translation.y - dragTranslationBaseline.y
+        )
+
         var newOffset = CGPoint(
-            x: dragStartOffset.x + translation.x,
-            y: dragStartOffset.y + translation.y
+            x: dragStartOffset.x + effectiveTranslation.x,
+            y: dragStartOffset.y + effectiveTranslation.y
         )
 
         // Apply rubber-band if we have bounds and it's enabled
@@ -360,6 +368,48 @@ public final class GestureCoordinator: @unchecked Sendable {
     /// Called when a zoom gesture is cancelled.
     public func zoomCancelled() {
         setState(.idle)
+    }
+
+    // MARK: - Gesture Transitions
+
+    /// Smoothly transitions from a zoom gesture to a pan gesture.
+    ///
+    /// Call this when a two-finger pinch becomes a one-finger drag (e.g., user
+    /// lifts one finger). This captures the current translation as a baseline
+    /// so subsequent `panChanged` calls produce smooth, continuous movement.
+    ///
+    /// - Parameter currentTranslation: The gesture's current cumulative translation
+    ///   at the moment of transition
+    public func transitionFromZoomToPan(currentTranslation: CGPoint) {
+        momentumAnimator.stop()
+        dragStartOffset = transform.offset
+        dragTranslationBaseline = currentTranslation
+        setState(.dragging)
+    }
+
+    /// Smoothly transitions from a pan gesture to a zoom gesture.
+    ///
+    /// Call this when a one-finger drag becomes a two-finger pinch (e.g., user
+    /// adds a second finger). This captures the current scale and offset so
+    /// subsequent `zoomChanged` calls produce smooth, continuous movement.
+    ///
+    /// - Parameters:
+    ///   - currentScale: The gesture's current cumulative scale at transition
+    ///   - currentTranslation: The gesture's current cumulative translation at transition
+    ///   - center: Canvas center point
+    public func transitionFromPanToZoom(
+        currentScale: CGFloat,
+        currentTranslation: CGPoint,
+        center: CGPoint
+    ) {
+        momentumAnimator.stop()
+        // The current transform already reflects where we are.
+        // We need to set zoomStart values such that applying currentScale
+        // and currentTranslation would reproduce the current transform.
+        // Since we're starting fresh from current state:
+        zoomStartScale = transform.scale / currentScale
+        zoomStartOffset = transform.offset
+        setState(.zooming)
     }
 
     // MARK: - Animation Update

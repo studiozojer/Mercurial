@@ -175,6 +175,99 @@ final class GestureCoordinatorZoomTests: XCTestCase {
     }
 }
 
+// MARK: - Gesture Transition Tests
+
+@MainActor
+final class GestureCoordinatorTransitionTests: XCTestCase {
+
+    let center = CGPoint(x: 200, y: 200)
+
+    func testTransitionFromZoomToPanSetsState() {
+        let coordinator = GestureCoordinator()
+        coordinator.zoomBegan()
+        coordinator.zoomChanged(scale: 2.0, anchor: center, center: center)
+
+        coordinator.transitionFromZoomToPan(currentTranslation: CGPoint(x: 50, y: 30))
+
+        XCTAssertEqual(coordinator.state, .dragging)
+    }
+
+    func testTransitionFromZoomToPanPreservesOffset() {
+        let coordinator = GestureCoordinator()
+        coordinator.zoomBegan()
+        coordinator.zoomChanged(scale: 2.0, anchor: center, center: center)
+
+        let offsetBeforeTransition = coordinator.transform.offset
+        coordinator.transitionFromZoomToPan(currentTranslation: CGPoint(x: 50, y: 30))
+
+        // Offset should remain unchanged immediately after transition
+        XCTAssertEqual(coordinator.transform.offset, offsetBeforeTransition)
+    }
+
+    func testTransitionFromZoomToPanContinuesSmoothly() {
+        let coordinator = GestureCoordinator()
+        coordinator.zoomBegan()
+        coordinator.zoomChanged(scale: 2.0, anchor: center, center: center)
+
+        let offsetBeforeTransition = coordinator.transform.offset
+
+        // Transition with current translation of (50, 30)
+        coordinator.transitionFromZoomToPan(currentTranslation: CGPoint(x: 50, y: 30))
+
+        // Pan with a slightly increased translation (user moved finger 10pt right)
+        coordinator.panChanged(CGPoint(x: 60, y: 30), center: center)
+
+        // Offset should only change by the delta (10, 0), not by the full translation
+        XCTAssertEqual(coordinator.transform.offset.x, offsetBeforeTransition.x + 10, accuracy: 0.001)
+        XCTAssertEqual(coordinator.transform.offset.y, offsetBeforeTransition.y, accuracy: 0.001)
+    }
+
+    func testTransitionFromPanToZoomSetsState() {
+        let coordinator = GestureCoordinator()
+        coordinator.panBegan()
+        coordinator.panChanged(CGPoint(x: 50, y: 30), center: center)
+
+        coordinator.transitionFromPanToZoom(
+            currentScale: 1.0,
+            currentTranslation: CGPoint(x: 50, y: 30),
+            center: center
+        )
+
+        XCTAssertEqual(coordinator.state, .zooming)
+    }
+
+    func testTransitionFromPanToZoomPreservesTransform() {
+        let coordinator = GestureCoordinator()
+        coordinator.panBegan()
+        coordinator.panChanged(CGPoint(x: 50, y: 30), center: center)
+
+        let transformBeforeTransition = coordinator.transform
+
+        coordinator.transitionFromPanToZoom(
+            currentScale: 1.0,
+            currentTranslation: CGPoint(x: 50, y: 30),
+            center: center
+        )
+
+        // Transform should remain unchanged immediately after transition
+        XCTAssertEqual(coordinator.transform.scale, transformBeforeTransition.scale, accuracy: 0.001)
+        XCTAssertEqual(coordinator.transform.offset.x, transformBeforeTransition.offset.x, accuracy: 0.001)
+        XCTAssertEqual(coordinator.transform.offset.y, transformBeforeTransition.offset.y, accuracy: 0.001)
+    }
+
+    func testNormalPanDoesNotUseBaseline() {
+        // Verify that normal pan gestures (starting fresh) work correctly
+        let coordinator = GestureCoordinator()
+
+        // Fresh pan should start from zero
+        coordinator.panBegan()
+        coordinator.panChanged(CGPoint(x: 100, y: 50), center: center)
+
+        XCTAssertEqual(coordinator.transform.offset.x, 100, accuracy: 0.001)
+        XCTAssertEqual(coordinator.transform.offset.y, 50, accuracy: 0.001)
+    }
+}
+
 // MARK: - Rubber Band Tests
 
 @MainActor
