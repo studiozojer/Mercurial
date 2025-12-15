@@ -266,11 +266,22 @@ public final class GestureCoordinator: @unchecked Sendable {
             configuration: configuration.transform
         )
 
-        let scaledTransform = startTransform.scaled(
+        var scaledTransform = startTransform.scaled(
             by: scale,
             anchor: anchor,
             center: center
         )
+
+        // Apply rubber-band if offset exceeds bounds at the new scale
+        if let bounds = configuration.contentBounds, configuration.rubberBandEnabled {
+            let constrainedOffset = applyRubberBand(
+                to: scaledTransform.offset,
+                bounds: bounds,
+                center: center,
+                atScale: scaledTransform.scale
+            )
+            scaledTransform = scaledTransform.withOffset(constrainedOffset)
+        }
 
         setTransform(scaledTransform)
     }
@@ -310,10 +321,20 @@ public final class GestureCoordinator: @unchecked Sendable {
         )
 
         // Add pan delta (1:1 with finger movement)
-        let combinedOffset = CGPoint(
+        var combinedOffset = CGPoint(
             x: scaledTransform.offset.x + panDelta.x,
             y: scaledTransform.offset.y + panDelta.y
         )
+
+        // Apply rubber-band if offset exceeds bounds at the new scale
+        if let bounds = configuration.contentBounds, configuration.rubberBandEnabled {
+            combinedOffset = applyRubberBand(
+                to: combinedOffset,
+                bounds: bounds,
+                center: center,
+                atScale: scaledTransform.scale
+            )
+        }
 
         let finalTransform = scaledTransform.withOffset(combinedOffset)
         setTransform(finalTransform)
@@ -432,26 +453,49 @@ public final class GestureCoordinator: @unchecked Sendable {
         setState(.bouncing)
     }
 
-    /// Calculates effective pan bounds accounting for current scale.
+    /// Calculates effective pan bounds accounting for scale.
     ///
     /// When zoomed in, you can pan further. When zoomed out, bounds shrink.
-    private func effectivePanBounds(for contentBounds: PhysicsBounds, center: CGPoint) -> PhysicsBounds {
+    ///
+    /// - Parameters:
+    ///   - contentBounds: The content bounds in canvas space
+    ///   - center: Canvas center point
+    ///   - scale: Scale to use for calculation (defaults to current transform scale)
+    /// - Returns: Effective bounds scaled appropriately
+    private func effectivePanBounds(
+        for contentBounds: PhysicsBounds,
+        center: CGPoint,
+        atScale scale: CGFloat? = nil
+    ) -> PhysicsBounds {
+        let effectiveScale = scale ?? transform.scale
         // At scale 1.0, offset bounds match content bounds
         // At scale 2.0, offset can go twice as far
         let scaledMin = CGPoint(
-            x: contentBounds.min.x * transform.scale,
-            y: contentBounds.min.y * transform.scale
+            x: contentBounds.min.x * effectiveScale,
+            y: contentBounds.min.y * effectiveScale
         )
         let scaledMax = CGPoint(
-            x: contentBounds.max.x * transform.scale,
-            y: contentBounds.max.y * transform.scale
+            x: contentBounds.max.x * effectiveScale,
+            y: contentBounds.max.y * effectiveScale
         )
         return PhysicsBounds(min: scaledMin, max: scaledMax)
     }
 
     /// Applies rubber-band resistance to offset when past bounds.
-    private func applyRubberBand(to offset: CGPoint, bounds: PhysicsBounds, center: CGPoint) -> CGPoint {
-        let effectiveBounds = effectivePanBounds(for: bounds, center: center)
+    ///
+    /// - Parameters:
+    ///   - offset: The offset to constrain
+    ///   - bounds: Content bounds in canvas space
+    ///   - center: Canvas center point
+    ///   - scale: Scale to use for effective bounds (defaults to current transform scale)
+    /// - Returns: Offset with rubber-band resistance applied
+    private func applyRubberBand(
+        to offset: CGPoint,
+        bounds: PhysicsBounds,
+        center: CGPoint,
+        atScale scale: CGFloat? = nil
+    ) -> CGPoint {
+        let effectiveBounds = effectivePanBounds(for: bounds, center: center, atScale: scale)
 
         var result = offset
 
