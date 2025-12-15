@@ -373,6 +373,31 @@ public final class GestureCoordinator: @unchecked Sendable {
         }
     }
 
+    /// Called when a combined zoom+pan gesture ends.
+    ///
+    /// Starts momentum animation if velocity exceeds threshold.
+    ///
+    /// - Parameters:
+    ///   - velocity: Pan velocity at release (calculated from position history)
+    ///   - center: Canvas center point
+    public func zoomPanEnded(velocity: CGPoint, center: CGPoint) {
+        let speed = Physics.speed(velocity)
+
+        if speed > configuration.minimumMomentumVelocity {
+            startMomentum(velocity: velocity, center: center)
+        } else if let bounds = configuration.contentBounds {
+            let effectiveBounds = effectivePanBounds(for: bounds, center: center)
+            let displacement = effectiveBounds.displacement(from: transform.offset)
+            if displacement != .zero {
+                startBounce(center: center)
+            } else {
+                setState(.idle)
+            }
+        } else {
+            setState(.idle)
+        }
+    }
+
     /// Called when a zoom gesture is cancelled.
     public func zoomCancelled() {
         setState(.idle)
@@ -469,6 +494,17 @@ public final class GestureCoordinator: @unchecked Sendable {
     public func stopAnimation() {
         momentumAnimator.stop()
         setState(.idle)
+    }
+
+    /// Sets the transform offset without changing gesture state.
+    ///
+    /// Use during mid-gesture transitions, such as single-finger panning
+    /// within an active pinch gesture. This preserves the current gesture
+    /// state (e.g., `.zooming`) so subsequent gesture calls work correctly.
+    ///
+    /// - Parameter offset: The new offset to apply
+    public func setOffsetDuringGesture(_ offset: CGPoint) {
+        setTransform(transform.withOffset(offset))
     }
 
     // MARK: - Private Methods
