@@ -9,6 +9,7 @@
 import Foundation
 import CoreGraphics
 import QuartzCore
+import Observation
 
 // MARK: - Gesture State
 
@@ -111,6 +112,7 @@ public struct GestureCoordinatorConfiguration: Equatable, Sendable {
 ///     }
 /// }
 /// ```
+@Observable
 @MainActor
 public final class GestureCoordinator: @unchecked Sendable {
     // MARK: - Public Properties
