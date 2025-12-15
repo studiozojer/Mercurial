@@ -105,6 +105,44 @@ public struct RubberBandConfiguration: Equatable, Sendable {
     public static let loose = RubberBandConfiguration(coefficient: 0.7, limit: 300)
 }
 
+// MARK: - Velocity Tracker Configuration
+
+/// Configuration for velocity tracking with exponential smoothing.
+public struct VelocityTrackerConfiguration: Equatable, Sendable {
+    /// Smoothing factor for exponential moving average (0.0-1.0).
+    /// Lower values = smoother but more laggy.
+    /// Higher values = more responsive but noisier.
+    public var smoothingFactor: CGFloat
+
+    /// Maximum time between samples to consider valid (seconds).
+    /// Samples older than this are ignored to prevent stale data.
+    public var maxSampleAge: CGFloat
+
+    /// Maximum time since last sample to use velocity on release (seconds).
+    /// If the last sample is older than this, velocity is treated as zero.
+    public var maxReleaseAge: CGFloat
+
+    /// Creates a velocity tracker configuration.
+    public init(
+        smoothingFactor: CGFloat = 0.3,
+        maxSampleAge: CGFloat = 0.5,
+        maxReleaseAge: CGFloat = 0.1
+    ) {
+        self.smoothingFactor = smoothingFactor
+        self.maxSampleAge = maxSampleAge
+        self.maxReleaseAge = maxReleaseAge
+    }
+
+    /// Default configuration tuned for responsive gesture tracking.
+    public static let `default` = VelocityTrackerConfiguration()
+
+    /// More responsive tracking (less smoothing).
+    public static let responsive = VelocityTrackerConfiguration(smoothingFactor: 0.5)
+
+    /// Smoother tracking (more averaging).
+    public static let smooth = VelocityTrackerConfiguration(smoothingFactor: 0.2)
+}
+
 // MARK: - Combined Configuration
 
 /// Complete physics configuration combining all physics behaviors.
@@ -112,16 +150,19 @@ public struct PhysicsConfiguration: Equatable, Sendable {
     public var momentum: MomentumConfiguration
     public var spring: SpringConfiguration
     public var rubberBand: RubberBandConfiguration
+    public var velocityTracker: VelocityTrackerConfiguration
 
     /// Creates a complete physics configuration.
     public init(
         momentum: MomentumConfiguration = .default,
         spring: SpringConfiguration = .default,
-        rubberBand: RubberBandConfiguration = .default
+        rubberBand: RubberBandConfiguration = .default,
+        velocityTracker: VelocityTrackerConfiguration = .default
     ) {
         self.momentum = momentum
         self.spring = spring
         self.rubberBand = rubberBand
+        self.velocityTracker = velocityTracker
     }
 
     /// Default configuration with iOS-like physics.

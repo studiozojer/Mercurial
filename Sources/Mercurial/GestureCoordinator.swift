@@ -158,6 +158,11 @@ public final class GestureCoordinator: @unchecked Sendable {
     private var zoomStartOffset: CGPoint = .zero
     private var zoomScaleBaseline: CGFloat = 1.0
 
+    // Velocity tracking state
+    private var velocityLastLocation: CGPoint = .zero
+    private var velocityLastTime: CFTimeInterval = 0
+    private var velocitySmoothed: CGPoint = .zero
+
     // MARK: - Initialization
 
     /// Creates a gesture coordinator with optional configuration.
@@ -440,6 +445,71 @@ public final class GestureCoordinator: @unchecked Sendable {
         // Set baseline so effectiveScale = scale / baseline starts at 1.0
         zoomScaleBaseline = currentScale
         setState(.zooming)
+    }
+
+    // MARK: - Velocity Tracking
+
+    /// The current smoothed velocity from tracking.
+    ///
+    /// Use this value when ending a gesture to get momentum velocity.
+    /// Returns zero if tracking data is stale (older than `maxReleaseAge`).
+    public var trackedVelocity: CGPoint {
+        let config = configuration.physics.velocityTracker
+        let timeSinceLastSample = CACurrentMediaTime() - velocityLastTime
+        return timeSinceLastSample < config.maxReleaseAge ? velocitySmoothed : .zero
+    }
+
+    /// Tracks a position sample for velocity calculation.
+    ///
+    /// Call this during gesture `.changed` events to accumulate velocity samples.
+    /// Uses exponential smoothing to filter noise from high-frequency samples.
+    ///
+    /// - Parameter location: Current gesture location in viewport space
+    public func trackVelocity(at location: CGPoint) {
+        let config = configuration.physics.velocityTracker
+        let currentTime = CACurrentMediaTime()
+        let dt = currentTime - velocityLastTime
+
+        // Only calculate velocity if we have a previous sample and it's recent enough
+        if velocityLastTime > 0 && dt > 0 && dt < config.maxSampleAge {
+            let instantVelocity = CGPoint(
+                x: (location.x - velocityLastLocation.x) / dt,
+                y: (location.y - velocityLastLocation.y) / dt
+            )
+            // Exponential moving average
+            velocitySmoothed = CGPoint(
+                x: config.smoothingFactor * instantVelocity.x + (1 - config.smoothingFactor) * velocitySmoothed.x,
+                y: config.smoothingFactor * instantVelocity.y + (1 - config.smoothingFactor) * velocitySmoothed.y
+            )
+        }
+
+        velocityLastLocation = location
+        velocityLastTime = currentTime
+    }
+
+    /// Resets velocity tracking state.
+    ///
+    /// Call this at the start of a new gesture to clear stale data.
+    public func resetVelocityTracking() {
+        velocitySmoothed = .zero
+        velocityLastLocation = .zero
+        velocityLastTime = 0
+    }
+
+    /// Notifies that the touch count changed during a gesture.
+    ///
+    /// When touch count changes (e.g., 2→1 or 1→2), the gesture center point
+    /// jumps discontinuously. This method updates the tracking baseline without
+    /// calculating velocity across the discontinuity, preserving the last good
+    /// velocity for momentum on release.
+    ///
+    /// - Parameter location: Current gesture location after the touch count change
+    public func notifyTouchCountChanged(at location: CGPoint) {
+        // Update baseline location/time but preserve the smoothed velocity
+        // This prevents calculating invalid velocity across the center jump
+        velocityLastLocation = location
+        velocityLastTime = CACurrentMediaTime()
+        // Note: We intentionally do NOT reset velocitySmoothed here
     }
 
     // MARK: - Animation Update
