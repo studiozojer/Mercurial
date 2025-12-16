@@ -122,15 +122,21 @@ public struct VelocityTrackerConfiguration: Equatable, Sendable {
     /// If the last sample is older than this, velocity is treated as zero.
     public var maxReleaseAge: CGFloat
 
+    /// Maximum velocity magnitude (pt/s).
+    /// Velocity samples exceeding this are clamped to prevent extreme momentum.
+    public var maxVelocity: CGFloat
+
     /// Creates a velocity tracker configuration.
     public init(
         smoothingFactor: CGFloat = 0.3,
         maxSampleAge: CGFloat = 0.5,
-        maxReleaseAge: CGFloat = 0.1
+        maxReleaseAge: CGFloat = 0.1,
+        maxVelocity: CGFloat = 2500
     ) {
         self.smoothingFactor = smoothingFactor
         self.maxSampleAge = maxSampleAge
         self.maxReleaseAge = maxReleaseAge
+        self.maxVelocity = maxVelocity
     }
 
     /// Default configuration tuned for responsive gesture tracking.
@@ -143,6 +149,32 @@ public struct VelocityTrackerConfiguration: Equatable, Sendable {
     public static let smooth = VelocityTrackerConfiguration(smoothingFactor: 0.2)
 }
 
+// MARK: - Gesture Intent Configuration
+
+/// Configuration for classifying gesture intent (zoom vs pan).
+public struct GestureIntentConfiguration: Equatable, Sendable {
+    /// Equivalence factor: how many points of pan equals 1.0 scale change.
+    /// Higher values = more pan distance needed to be considered "pan-like".
+    /// At 200pt, a 200pt pan has the same "weight" as doubling the zoom.
+    public var panToScaleEquivalence: CGFloat
+
+    /// Minimum pan intent (0.0-1.0) to apply any momentum.
+    /// Below this threshold, momentum is zero (pure zoom).
+    public var minimumPanIntent: CGFloat
+
+    /// Creates a gesture intent configuration.
+    public init(
+        panToScaleEquivalence: CGFloat = 200,
+        minimumPanIntent: CGFloat = 0.3
+    ) {
+        self.panToScaleEquivalence = panToScaleEquivalence
+        self.minimumPanIntent = minimumPanIntent
+    }
+
+    /// Default configuration.
+    public static let `default` = GestureIntentConfiguration()
+}
+
 // MARK: - Combined Configuration
 
 /// Complete physics configuration combining all physics behaviors.
@@ -151,22 +183,55 @@ public struct PhysicsConfiguration: Equatable, Sendable {
     public var spring: SpringConfiguration
     public var rubberBand: RubberBandConfiguration
     public var velocityTracker: VelocityTrackerConfiguration
+    public var gestureIntent: GestureIntentConfiguration
 
     /// Creates a complete physics configuration.
     public init(
         momentum: MomentumConfiguration = .default,
         spring: SpringConfiguration = .default,
         rubberBand: RubberBandConfiguration = .default,
-        velocityTracker: VelocityTrackerConfiguration = .default
+        velocityTracker: VelocityTrackerConfiguration = .default,
+        gestureIntent: GestureIntentConfiguration = .default
     ) {
         self.momentum = momentum
         self.spring = spring
         self.rubberBand = rubberBand
         self.velocityTracker = velocityTracker
+        self.gestureIntent = gestureIntent
     }
 
     /// Default configuration with iOS-like physics.
     public static let `default` = PhysicsConfiguration()
+}
+
+// MARK: - Touch Classification
+
+/// Classification of a touch gesture based on movement.
+public enum TouchClassification: Equatable, Sendable {
+    /// Touch stayed within threshold - treat as a tap.
+    case tap
+    /// Touch moved beyond threshold - treat as a drag.
+    case drag
+}
+
+/// Configuration for touch classification.
+public struct TouchClassificationConfiguration: Equatable, Sendable {
+    /// Maximum movement (in points) to still classify as a tap.
+    public var tapMovementThreshold: CGFloat
+
+    /// Creates a touch classification configuration.
+    public init(tapMovementThreshold: CGFloat = 15) {
+        self.tapMovementThreshold = tapMovementThreshold
+    }
+
+    /// Default configuration.
+    public static let `default` = TouchClassificationConfiguration()
+
+    /// Stricter tap detection (less movement allowed).
+    public static let strict = TouchClassificationConfiguration(tapMovementThreshold: 10)
+
+    /// Looser tap detection (more movement allowed).
+    public static let loose = TouchClassificationConfiguration(tapMovementThreshold: 25)
 }
 
 // MARK: - Bounds

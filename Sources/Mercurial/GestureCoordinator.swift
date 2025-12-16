@@ -13,7 +13,7 @@ import Observation
 
 // MARK: - Gesture State
 
-/// Current state of gesture handling.
+/// Current state of gesture handling (includes animations).
 public enum GestureState: Equatable, Sendable {
     /// No active gesture or animation.
     case idle
@@ -29,6 +29,27 @@ public enum GestureState: Equatable, Sendable {
 
     /// Spring animation is returning content to bounds.
     case bouncing
+}
+
+// MARK: - Gesture Input Mode
+
+/// Tracks the active user gesture (separate from animation state).
+///
+/// Use this to determine what gesture the user is currently performing,
+/// which helps coordinate between simultaneous gesture recognizers.
+public enum GestureInputMode: Equatable, Sendable {
+    /// No active touch gesture.
+    case idle
+
+    /// Single-finger pan gesture is active.
+    case panning
+
+    /// Two-finger pinch-zoom gesture is active.
+    case zooming
+
+    /// User lifted one finger during a zoom gesture (2→1 transition).
+    /// The gesture is still conceptually a "zoom" but with single-finger panning.
+    case singleFingerInZoom
 }
 
 // MARK: - Gesture Coordinator Configuration
@@ -54,6 +75,9 @@ public struct GestureCoordinatorConfiguration: Equatable, Sendable {
     /// Minimum velocity to trigger momentum (pt/s).
     public var minimumMomentumVelocity: CGFloat
 
+    /// Touch classification configuration.
+    public var touchClassification: TouchClassificationConfiguration
+
     /// Creates a gesture coordinator configuration.
     public init(
         transform: TransformConfiguration = .default,
@@ -61,7 +85,8 @@ public struct GestureCoordinatorConfiguration: Equatable, Sendable {
         contentBounds: PhysicsBounds? = nil,
         rubberBandEnabled: Bool = true,
         rubberBand: RubberBandConfiguration = .default,
-        minimumMomentumVelocity: CGFloat = 50
+        minimumMomentumVelocity: CGFloat = 50,
+        touchClassification: TouchClassificationConfiguration = .default
     ) {
         self.transform = transform
         self.physics = physics
@@ -69,6 +94,7 @@ public struct GestureCoordinatorConfiguration: Equatable, Sendable {
         self.rubberBandEnabled = rubberBandEnabled
         self.rubberBand = rubberBand
         self.minimumMomentumVelocity = minimumMomentumVelocity
+        self.touchClassification = touchClassification
     }
 
     /// Default configuration.
@@ -123,6 +149,10 @@ public final class GestureCoordinator: @unchecked Sendable {
     /// Current gesture/animation state.
     public private(set) var state: GestureState = .idle
 
+    /// Current user input mode (what gesture is active).
+    /// Use this to coordinate between simultaneous gesture recognizers.
+    public private(set) var inputMode: GestureInputMode = .idle
+
     /// Configuration for gestures and physics.
     public var configuration: GestureCoordinatorConfiguration {
         didSet {
@@ -167,6 +197,11 @@ public final class GestureCoordinator: @unchecked Sendable {
     private var singleFingerPanAnchor: CGPoint = .zero
     private var singleFingerPanStartOffset: CGPoint = .zero
 
+    // Gesture intent tracking state
+    private var zoomPanStartScale: CGFloat = 1.0
+    private var zoomPanTotalPanDistance: CGFloat = 0
+    private var zoomPanLastLocation: CGPoint = .zero
+
     // MARK: - Initialization
 
     /// Creates a gesture coordinator with optional configuration.
@@ -191,6 +226,7 @@ public final class GestureCoordinator: @unchecked Sendable {
         momentumAnimator.stop()
         dragStartOffset = transform.offset
         dragTranslationBaseline = .zero
+        inputMode = .panning
         setState(.dragging)
     }
 
@@ -231,6 +267,7 @@ public final class GestureCoordinator: @unchecked Sendable {
     ///   - velocity: Gesture velocity at release
     ///   - center: Canvas center point
     public func panEnded(velocity: CGPoint, center: CGPoint) {
+        inputMode = .idle
         let speed = Physics.speed(velocity)
 
         if speed > configuration.minimumMomentumVelocity {
@@ -251,6 +288,7 @@ public final class GestureCoordinator: @unchecked Sendable {
 
     /// Called when a pan gesture is cancelled.
     public func panCancelled() {
+        inputMode = .idle
         setState(.idle)
     }
 
@@ -264,6 +302,13 @@ public final class GestureCoordinator: @unchecked Sendable {
         zoomStartScale = transform.scale
         zoomStartOffset = transform.offset
         zoomScaleBaseline = 1.0
+
+        // Reset gesture intent tracking
+        zoomPanStartScale = transform.scale
+        zoomPanTotalPanDistance = 0
+        zoomPanLastLocation = .zero
+
+        inputMode = .zooming
         setState(.zooming)
     }
 
@@ -328,6 +373,15 @@ public final class GestureCoordinator: @unchecked Sendable {
             zoomBegan()
         }
 
+        // Track gesture intent: accumulate pan distance
+        let currentLocation = CGPoint(x: anchor.x + panDelta.x, y: anchor.y + panDelta.y)
+        if zoomPanLastLocation != .zero {
+            let dx = currentLocation.x - zoomPanLastLocation.x
+            let dy = currentLocation.y - zoomPanLastLocation.y
+            zoomPanTotalPanDistance += hypot(dx, dy)
+        }
+        zoomPanLastLocation = currentLocation
+
         // Compute effective scale relative to baseline (handles mid-gesture transitions)
         let effectiveScale = scale / zoomScaleBaseline
 
@@ -369,6 +423,7 @@ public final class GestureCoordinator: @unchecked Sendable {
     ///
     /// - Parameter center: Canvas center point
     public func zoomEnded(center: CGPoint) {
+        inputMode = .idle
         if let bounds = configuration.contentBounds {
             let effectiveBounds = effectivePanBounds(for: bounds, center: center)
             let displacement = effectiveBounds.displacement(from: transform.offset)
@@ -384,16 +439,41 @@ public final class GestureCoordinator: @unchecked Sendable {
 
     /// Called when a combined zoom+pan gesture ends.
     ///
-    /// Starts momentum animation if velocity exceeds threshold.
+    /// Starts momentum animation if velocity exceeds threshold and gesture
+    /// was sufficiently "pan-like". Pure zoom gestures get no momentum.
     ///
     /// - Parameters:
     ///   - velocity: Pan velocity at release (calculated from position history)
     ///   - center: Canvas center point
     public func zoomPanEnded(velocity: CGPoint, center: CGPoint) {
-        let speed = Physics.speed(velocity)
+        inputMode = .idle
+
+        // Compute gesture intent: how much was this a pan vs a zoom?
+        let intentConfig = configuration.physics.gestureIntent
+        let scaleDelta = abs(transform.scale - zoomPanStartScale)
+        let panMagnitude = zoomPanTotalPanDistance / intentConfig.panToScaleEquivalence
+        let totalMagnitude = scaleDelta + panMagnitude
+
+        // panIntent: 0.0 = pure zoom, 1.0 = pure pan
+        let panIntent = totalMagnitude > 0 ? panMagnitude / totalMagnitude : 0
+
+        // Scale velocity by pan intent (zoom-dominant gestures get reduced momentum)
+        let effectiveVelocity: CGPoint
+        if panIntent < intentConfig.minimumPanIntent {
+            // Below threshold: no momentum (pure zoom)
+            effectiveVelocity = .zero
+        } else {
+            // Scale velocity by intent
+            effectiveVelocity = CGPoint(
+                x: velocity.x * panIntent,
+                y: velocity.y * panIntent
+            )
+        }
+
+        let speed = Physics.speed(effectiveVelocity)
 
         if speed > configuration.minimumMomentumVelocity {
-            startMomentum(velocity: velocity, center: center)
+            startMomentum(velocity: effectiveVelocity, center: center)
         } else if let bounds = configuration.contentBounds {
             let effectiveBounds = effectivePanBounds(for: bounds, center: center)
             let displacement = effectiveBounds.displacement(from: transform.offset)
@@ -409,6 +489,7 @@ public final class GestureCoordinator: @unchecked Sendable {
 
     /// Called when a zoom gesture is cancelled.
     public func zoomCancelled() {
+        inputMode = .idle
         setState(.idle)
     }
 
@@ -448,6 +529,7 @@ public final class GestureCoordinator: @unchecked Sendable {
         zoomStartOffset = transform.offset
         // Set baseline so effectiveScale = scale / baseline starts at 1.0
         zoomScaleBaseline = currentScale
+        inputMode = .zooming
         setState(.zooming)
     }
 
@@ -476,15 +558,30 @@ public final class GestureCoordinator: @unchecked Sendable {
 
         // Only calculate velocity if we have a previous sample and it's recent enough
         if velocityLastTime > 0 && dt > 0 && dt < config.maxSampleAge {
-            let instantVelocity = CGPoint(
+            var instantVelocity = CGPoint(
                 x: (location.x - velocityLastLocation.x) / dt,
                 y: (location.y - velocityLastLocation.y) / dt
             )
-            // Exponential moving average
-            velocitySmoothed = CGPoint(
-                x: config.smoothingFactor * instantVelocity.x + (1 - config.smoothingFactor) * velocitySmoothed.x,
-                y: config.smoothingFactor * instantVelocity.y + (1 - config.smoothingFactor) * velocitySmoothed.y
-            )
+
+            // Clamp instant velocity to prevent extreme values
+            let speed = Physics.speed(instantVelocity)
+            if speed > config.maxVelocity {
+                let scale = config.maxVelocity / speed
+                instantVelocity.x *= scale
+                instantVelocity.y *= scale
+            }
+
+            // For first sample, use it directly instead of smoothing against zero
+            // This ensures quick gestures get accurate velocity
+            if velocitySmoothed == .zero {
+                velocitySmoothed = instantVelocity
+            } else {
+                // Exponential moving average for subsequent samples
+                velocitySmoothed = CGPoint(
+                    x: config.smoothingFactor * instantVelocity.x + (1 - config.smoothingFactor) * velocitySmoothed.x,
+                    y: config.smoothingFactor * instantVelocity.y + (1 - config.smoothingFactor) * velocitySmoothed.y
+                )
+            }
         }
 
         velocityLastLocation = location
@@ -529,6 +626,7 @@ public final class GestureCoordinator: @unchecked Sendable {
     public func beginSingleFingerPanDuringZoom(at location: CGPoint) {
         singleFingerPanAnchor = location
         singleFingerPanStartOffset = transform.offset
+        inputMode = .singleFingerInZoom
     }
 
     /// Updates single-finger pan position during zoom.
@@ -584,6 +682,7 @@ public final class GestureCoordinator: @unchecked Sendable {
             offset: .zero,
             configuration: configuration.transform
         ))
+        inputMode = .idle
         setState(.idle)
     }
 
@@ -782,6 +881,28 @@ extension GestureCoordinator {
             center: center
         )
     }
+
+    // MARK: - Touch Classification
+
+    /// Classifies a touch as tap or drag based on movement distance.
+    ///
+    /// Use this at the end of a touch sequence to determine intent.
+    /// The touch still responds immediately; this determines retroactively
+    /// whether the movement was intentional dragging or incidental.
+    ///
+    /// - Parameters:
+    ///   - startPoint: Where the touch began
+    ///   - endPoint: Where the touch ended
+    /// - Returns: `.tap` if movement was within threshold, `.drag` otherwise
+    public func classifyTouch(from startPoint: CGPoint, to endPoint: CGPoint) -> TouchClassification {
+        let dx = endPoint.x - startPoint.x
+        let dy = endPoint.y - startPoint.y
+        let distance = hypot(dx, dy)
+        let threshold = configuration.touchClassification.tapMovementThreshold
+        return distance < threshold ? .tap : .drag
+    }
+
+    // MARK: - Coordinate Conversion
 
     /// Converts a viewport point to canvas space using current transform.
     ///
