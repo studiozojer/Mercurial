@@ -29,6 +29,9 @@ public enum GestureState: Equatable, Sendable {
 
     /// Spring animation is returning content to bounds.
     case bouncing
+
+    /// Spring animation to a target transform (e.g., double-tap zoom).
+    case animatingToTarget
 }
 
 // MARK: - Gesture Input Mode
@@ -169,7 +172,7 @@ public final class GestureCoordinator: @unchecked Sendable {
 
     /// Whether any animation is currently running.
     public var isAnimating: Bool {
-        state == .momentum || state == .bouncing
+        state == .momentum || state == .bouncing || state == .animatingToTarget
     }
 
     /// Callback invoked when transform changes.
@@ -201,6 +204,13 @@ public final class GestureCoordinator: @unchecked Sendable {
     private var zoomPanStartScale: CGFloat = 1.0
     private var zoomPanTotalPanDistance: CGFloat = 0
     private var zoomPanLastLocation: CGPoint = .zero
+
+    // Spring animation to target transform state
+    private var springTargetScale: CGFloat = 1.0
+    private var springTargetOffset: CGPoint = .zero
+    private var springScaleVelocity: CGFloat = 0
+    private var springOffsetVelocity: CGPoint = .zero
+    private var springLastUpdateTime: CFTimeInterval = 0
 
     // MARK: - Initialization
 
@@ -660,6 +670,12 @@ public final class GestureCoordinator: @unchecked Sendable {
     public func update() -> Bool {
         guard isAnimating else { return false }
 
+        // Handle spring animation to target transform
+        if state == .animatingToTarget {
+            return updateSpringAnimation()
+        }
+
+        // Handle momentum/bounce animation
         let stillActive = momentumAnimator.update()
         let newOffset = momentumAnimator.position
 
@@ -670,6 +686,73 @@ public final class GestureCoordinator: @unchecked Sendable {
         }
 
         return stillActive
+    }
+
+    /// Updates spring animation toward target transform.
+    private func updateSpringAnimation() -> Bool {
+        let currentTime = CACurrentMediaTime()
+        let rawDelta = currentTime - springLastUpdateTime
+        let deltaTime = CGFloat(min(rawDelta, 1.0 / 30.0))
+        springLastUpdateTime = currentTime
+
+        let stiffness: CGFloat = 300
+        let damping: CGFloat = 25
+
+        // Animate scale
+        let scaleDisplacement = transform.scale - springTargetScale
+        let scaleForce = Physics.springForce(
+            displacement: scaleDisplacement,
+            velocity: springScaleVelocity,
+            stiffness: stiffness,
+            damping: damping
+        )
+        springScaleVelocity += scaleForce * deltaTime
+        let newScale = transform.scale + springScaleVelocity * deltaTime
+
+        // Animate offset
+        let offsetDisplacement = CGPoint(
+            x: transform.offset.x - springTargetOffset.x,
+            y: transform.offset.y - springTargetOffset.y
+        )
+        let offsetForce = Physics.springForce(
+            displacement: offsetDisplacement,
+            velocity: springOffsetVelocity,
+            stiffness: stiffness,
+            damping: damping
+        )
+        springOffsetVelocity = CGPoint(
+            x: springOffsetVelocity.x + offsetForce.x * deltaTime,
+            y: springOffsetVelocity.y + offsetForce.y * deltaTime
+        )
+        let newOffset = CGPoint(
+            x: transform.offset.x + springOffsetVelocity.x * deltaTime,
+            y: transform.offset.y + springOffsetVelocity.y * deltaTime
+        )
+
+        // Apply new transform
+        let newTransform = Transform(
+            scale: newScale,
+            offset: newOffset,
+            configuration: configuration.transform
+        )
+        setTransform(newTransform)
+
+        // Check if animation is complete
+        let scaleSettled = abs(scaleDisplacement) < 0.001 && abs(springScaleVelocity) < 0.01
+        let offsetSettled = Physics.speed(offsetDisplacement) < 0.5 && Physics.speed(springOffsetVelocity) < 1
+
+        if scaleSettled && offsetSettled {
+            // Snap to exact target
+            setTransform(Transform(
+                scale: springTargetScale,
+                offset: springTargetOffset,
+                configuration: configuration.transform
+            ))
+            setState(.idle)
+            return false
+        }
+
+        return true
     }
 
     // MARK: - State Management
@@ -684,6 +767,66 @@ public final class GestureCoordinator: @unchecked Sendable {
         ))
         inputMode = .idle
         setState(.idle)
+    }
+
+    /// Animates to identity transform with spring physics.
+    public func animatedReset() {
+        animateToTransform(scale: 1.0, offset: .zero)
+    }
+
+    /// Animates to a target transform using spring physics.
+    ///
+    /// Use this for programmatic zoom changes like double-tap to zoom.
+    /// The animation uses spring physics for a natural feel.
+    ///
+    /// - Parameters:
+    ///   - scale: Target scale
+    ///   - offset: Target offset
+    public func animateToTransform(scale: CGFloat, offset: CGPoint) {
+        momentumAnimator.stop()
+
+        springTargetScale = scale
+        springTargetOffset = offset
+        springScaleVelocity = 0
+        springOffsetVelocity = .zero
+        springLastUpdateTime = CACurrentMediaTime()
+
+        inputMode = .idle
+        setState(.animatingToTarget)
+    }
+
+    /// Animates zoom to a target scale at a specific anchor point.
+    ///
+    /// The offset is calculated to keep the anchor point stationary during zoom.
+    ///
+    /// - Parameters:
+    ///   - scale: Target scale
+    ///   - anchor: Point in viewport space that should remain stationary
+    ///   - center: Canvas center point
+    public func animateToScale(_ scale: CGFloat, anchor: CGPoint, center: CGPoint) {
+        // Calculate the offset needed to keep anchor stationary at target scale
+        let currentScale = transform.scale
+        let currentOffset = transform.offset
+
+        // Convert anchor to content space at current transform
+        let anchorInContent = CGPoint(
+            x: (anchor.x - center.x - currentOffset.x) / currentScale + center.x,
+            y: (anchor.y - center.y - currentOffset.y) / currentScale + center.y
+        )
+
+        // Calculate where anchor would be at new scale (with same offset)
+        let anchorAtNewScale = CGPoint(
+            x: (anchorInContent.x - center.x) * scale + center.x + currentOffset.x,
+            y: (anchorInContent.y - center.y) * scale + center.y + currentOffset.y
+        )
+
+        // Offset needed to bring anchor back to original position
+        let targetOffset = CGPoint(
+            x: currentOffset.x + (anchor.x - anchorAtNewScale.x),
+            y: currentOffset.y + (anchor.y - anchorAtNewScale.y)
+        )
+
+        animateToTransform(scale: scale, offset: targetOffset)
     }
 
     /// Sets a specific transform directly.
