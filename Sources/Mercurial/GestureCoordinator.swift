@@ -81,6 +81,14 @@ public struct GestureCoordinatorConfiguration: Equatable, Sendable {
     /// Touch classification configuration.
     public var touchClassification: TouchClassificationConfiguration
 
+    /// Whether to disable momentum and spring animations (for accessibility).
+    /// When true:
+    /// - Momentum is disabled (gesture stops immediately on finger lift)
+    /// - Spring animations are instant (snap to target instead of animating)
+    /// - Rubber-band effect clamps to bounds immediately instead of bouncing
+    /// Gestures still work normally during active touch.
+    public var reduceMotion: Bool
+
     /// Creates a gesture coordinator configuration.
     public init(
         transform: TransformConfiguration = .default,
@@ -89,7 +97,8 @@ public struct GestureCoordinatorConfiguration: Equatable, Sendable {
         rubberBandEnabled: Bool = true,
         rubberBand: RubberBandConfiguration = .default,
         minimumMomentumVelocity: CGFloat = 50,
-        touchClassification: TouchClassificationConfiguration = .default
+        touchClassification: TouchClassificationConfiguration = .default,
+        reduceMotion: Bool = false
     ) {
         self.transform = transform
         self.physics = physics
@@ -98,6 +107,7 @@ public struct GestureCoordinatorConfiguration: Equatable, Sendable {
         self.rubberBand = rubberBand
         self.minimumMomentumVelocity = minimumMomentumVelocity
         self.touchClassification = touchClassification
+        self.reduceMotion = reduceMotion
     }
 
     /// Default configuration.
@@ -272,12 +282,28 @@ public final class GestureCoordinator: @unchecked Sendable {
     /// Called when a pan gesture ends.
     ///
     /// Starts momentum animation if velocity exceeds threshold.
+    /// When reduceMotion is enabled, stops immediately and clamps to bounds.
     ///
     /// - Parameters:
     ///   - velocity: Gesture velocity at release
     ///   - center: Canvas center point
     public func panEnded(velocity: CGPoint, center: CGPoint) {
         inputMode = .idle
+
+        // When reduce motion is enabled, skip momentum entirely
+        if configuration.reduceMotion {
+            // Clamp to bounds if needed (instant, no bounce)
+            if let bounds = configuration.contentBounds {
+                let effectiveBounds = effectivePanBounds(for: bounds, center: center)
+                let clampedOffset = effectiveBounds.clamp(transform.offset)
+                if clampedOffset != transform.offset {
+                    setTransform(transform.withOffset(clampedOffset))
+                }
+            }
+            setState(.idle)
+            return
+        }
+
         let speed = Physics.speed(velocity)
 
         if speed > configuration.minimumMomentumVelocity {
@@ -434,6 +460,20 @@ public final class GestureCoordinator: @unchecked Sendable {
     /// - Parameter center: Canvas center point
     public func zoomEnded(center: CGPoint) {
         inputMode = .idle
+
+        // When reduce motion is enabled, clamp to bounds instantly
+        if configuration.reduceMotion {
+            if let bounds = configuration.contentBounds {
+                let effectiveBounds = effectivePanBounds(for: bounds, center: center)
+                let clampedOffset = effectiveBounds.clamp(transform.offset)
+                if clampedOffset != transform.offset {
+                    setTransform(transform.withOffset(clampedOffset))
+                }
+            }
+            setState(.idle)
+            return
+        }
+
         if let bounds = configuration.contentBounds {
             let effectiveBounds = effectivePanBounds(for: bounds, center: center)
             let displacement = effectiveBounds.displacement(from: transform.offset)
@@ -451,12 +491,27 @@ public final class GestureCoordinator: @unchecked Sendable {
     ///
     /// Starts momentum animation if velocity exceeds threshold and gesture
     /// was sufficiently "pan-like". Pure zoom gestures get no momentum.
+    /// When reduceMotion is enabled, stops immediately and clamps to bounds.
     ///
     /// - Parameters:
     ///   - velocity: Pan velocity at release (calculated from position history)
     ///   - center: Canvas center point
     public func zoomPanEnded(velocity: CGPoint, center: CGPoint) {
         inputMode = .idle
+
+        // When reduce motion is enabled, skip momentum entirely
+        if configuration.reduceMotion {
+            // Clamp to bounds if needed (instant, no bounce)
+            if let bounds = configuration.contentBounds {
+                let effectiveBounds = effectivePanBounds(for: bounds, center: center)
+                let clampedOffset = effectiveBounds.clamp(transform.offset)
+                if clampedOffset != transform.offset {
+                    setTransform(transform.withOffset(clampedOffset))
+                }
+            }
+            setState(.idle)
+            return
+        }
 
         // Compute gesture intent: how much was this a pan vs a zoom?
         let intentConfig = configuration.physics.gestureIntent
@@ -778,12 +833,26 @@ public final class GestureCoordinator: @unchecked Sendable {
     ///
     /// Use this for programmatic zoom changes like double-tap to zoom.
     /// The animation uses spring physics for a natural feel.
+    /// When reduceMotion is enabled, snaps instantly to target.
     ///
     /// - Parameters:
     ///   - scale: Target scale
     ///   - offset: Target offset
     public func animateToTransform(scale: CGFloat, offset: CGPoint) {
         momentumAnimator.stop()
+
+        // When reduce motion is enabled, snap instantly to target
+        if configuration.reduceMotion {
+            let newTransform = Transform(
+                scale: scale,
+                offset: offset,
+                configuration: configuration.transform
+            )
+            setTransform(newTransform)
+            inputMode = .idle
+            setState(.idle)
+            return
+        }
 
         springTargetScale = scale
         springTargetOffset = offset
