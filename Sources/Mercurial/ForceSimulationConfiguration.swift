@@ -36,12 +36,12 @@ public struct ForceSimulationConfiguration: Equatable, Sendable {
     public var collisionPadding: CGFloat
 
     public init(
-        repulsionStrength: CGFloat = 8000,
-        springStiffness: CGFloat = 0.3,
+        repulsionStrength: CGFloat = 5000,
+        springStiffness: CGFloat = 0.4,
         springRestLengthBase: CGFloat = 60,
         springDamping: CGFloat = 0.5,
-        centeringStrength: CGFloat = 0.01,
-        friction: CGFloat = 0.85,
+        centeringStrength: CGFloat = 0.08,
+        friction: CGFloat = 0.82,
         settleThreshold: CGFloat = 0.5,
         collisionPadding: CGFloat = 4
     ) {

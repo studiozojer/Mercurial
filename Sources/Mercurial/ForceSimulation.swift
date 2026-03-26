@@ -267,6 +267,19 @@ public final class ForceSimulation {
             // Integrate position
             pos = Physics.integrate(position: pos, velocity: vel, deltaTime: dt)
 
+            // Bounds clamping — keep nodes inside the canvas
+            let r = radii[id] ?? 12
+            let padding: CGFloat = 4
+            let minX = r + padding
+            let maxX = center.x * 2 - r - padding
+            let minY = r + padding
+            let maxY = center.y * 2 - r - padding
+
+            if pos.x < minX { pos.x = minX; vel.x = abs(vel.x) * 0.3 }
+            if pos.x > maxX { pos.x = maxX; vel.x = -abs(vel.x) * 0.3 }
+            if pos.y < minY { pos.y = minY; vel.y = abs(vel.y) * 0.3 }
+            if pos.y > maxY { pos.y = maxY; vel.y = -abs(vel.y) * 0.3 }
+
             velocities[id] = vel
             positions[id] = pos
 
