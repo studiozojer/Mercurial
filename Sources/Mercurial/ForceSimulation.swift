@@ -155,7 +155,10 @@ public final class ForceSimulation {
             forces[id] = .zero
         }
 
-        // 1. Repulsion between all node pairs (inverse-square)
+        // 1. Repulsion between all node pairs (inverse-square, range-limited, scaled by N)
+        let scaledRepulsion = configuration.repulsionStrength / CGFloat(n)
+        let maxRangeSq = configuration.repulsionMaxRange * configuration.repulsionMaxRange
+
         for i in 0..<n {
             for j in (i + 1)..<n {
                 let idI = nodeIds[i]
@@ -166,6 +169,9 @@ public final class ForceSimulation {
                 var dy = posJ.y - posI.y
                 var distSq = dx * dx + dy * dy
 
+                // Skip if beyond max range
+                if distSq > maxRangeSq { continue }
+
                 // Prevent division by zero — jitter if coincident
                 if distSq < 1 {
                     dx = CGFloat.random(in: -1...1)
@@ -174,7 +180,7 @@ public final class ForceSimulation {
                 }
 
                 let dist = sqrt(distSq)
-                let force = configuration.repulsionStrength / distSq
+                let force = scaledRepulsion / distSq
                 let fx = (dx / dist) * force
                 let fy = (dy / dist) * force
 
