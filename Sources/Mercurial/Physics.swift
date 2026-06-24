@@ -100,6 +100,21 @@ public enum Physics {
     public static func quadraticDecay(progress: CGFloat) -> CGFloat {
         return 1.0 - pow(progress, 2.0)
     }
+
+    // MARK: - Angles
+
+    /// Signed shortest angular delta from `a` to `b`, wrapped to `(-π, π]`.
+    ///
+    /// Rotation accumulates unbounded (a spun body can sit at 7π), so anything
+    /// that compares or springs between angles must work in wrapped space and
+    /// turn the short way.
+    public static func shortestAngleDelta(from a: CGFloat, to b: CGFloat) -> CGFloat {
+        let twoPi = 2 * CGFloat.pi
+        var d = (b - a).truncatingRemainder(dividingBy: twoPi)
+        if d <= -CGFloat.pi { d += twoPi }
+        else if d > CGFloat.pi { d -= twoPi }
+        return d
+    }
 }
 
 // MARK: - 2D Physics (CGPoint)
