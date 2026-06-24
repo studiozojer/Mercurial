@@ -297,3 +297,69 @@ public struct PhysicsBounds: Equatable, Sendable {
         return CGPoint(x: dx, y: dy)
     }
 }
+
+// MARK: - Angular Settle
+
+/// How a free body's rotation comes to rest once its spin decays.
+///
+/// Mechanism, not policy: the package defaults to `.free` (rest at any angle).
+/// Hosts that want tidy resting angles supply detents (e.g. a card table sets
+/// `.nearest([0, deckLean])`).
+public struct AngularSettleConfiguration: Equatable, Sendable {
+    /// Where rotation is allowed to settle.
+    public enum Snap: Equatable, Sendable {
+        /// Rest at any angle.
+        case free
+        /// Ease to the nearest of these target angles (radians).
+        case nearest([CGFloat])
+        /// Ease to the nearest multiple of `step` (radians), offset by `phase`.
+        case step(CGFloat, phase: CGFloat = 0)
+    }
+
+    public var snap: Snap
+    /// Per-frame angular velocity decay (own knob; rotation feel ≠ translation feel).
+    public var friction: CGFloat
+    /// Detent spring constant k.
+    public var stiffness: CGFloat
+    /// Detent spring damping c.
+    public var damping: CGFloat
+    /// Angular speed (rad/s) below which the detent spring engages.
+    public var engageBelow: CGFloat
+
+    public init(
+        snap: Snap = .free,
+        friction: CGFloat = 0.9,
+        stiffness: CGFloat = 200,
+        damping: CGFloat = 26,
+        engageBelow: CGFloat = 1.5
+    ) {
+        self.snap = snap
+        self.friction = friction
+        self.stiffness = stiffness
+        self.damping = damping
+        self.engageBelow = engageBelow
+    }
+
+    /// Unopinionated default: spin down and rest wherever friction dies.
+    public static let free = AngularSettleConfiguration(snap: .free)
+
+    /// The detent angle this rotation should settle toward, or `nil` to rest free.
+    ///
+    /// For `.nearest`, the closest target is chosen in wrapped space (shortest turn).
+    public func settleTarget(for rotation: CGFloat) -> CGFloat? {
+        switch snap {
+        case .free:
+            return nil
+        case .nearest(let angles):
+            guard !angles.isEmpty else { return nil }
+            return angles.min(by: {
+                abs(Physics.shortestAngleDelta(from: rotation, to: $0)) <
+                abs(Physics.shortestAngleDelta(from: rotation, to: $1))
+            })
+        case .step(let step, let phase):
+            guard step > 0 else { return nil }
+            let k = ((rotation - phase) / step).rounded()
+            return phase + k * step
+        }
+    }
+}

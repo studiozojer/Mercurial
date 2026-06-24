@@ -383,3 +383,26 @@ final class CGPointArithmeticTests: XCTestCase {
         XCTAssertEqual(point.y, 4, accuracy: 0.001)
     }
 }
+
+// MARK: - Shortest Angle Delta Tests
+
+final class ShortestAngleDeltaTests: XCTestCase {
+    func testZero() {
+        XCTAssertEqual(Physics.shortestAngleDelta(from: 0, to: 0), 0, accuracy: 1e-9)
+    }
+    func testQuarterTurnForward() {
+        XCTAssertEqual(Physics.shortestAngleDelta(from: 0, to: .pi / 2), .pi / 2, accuracy: 1e-9)
+    }
+    func testGoesTheShortWay() {
+        // 3π/2 forward is the same as π/2 backward — expect the short, negative way.
+        XCTAssertEqual(Physics.shortestAngleDelta(from: 0, to: 3 * .pi / 2), -.pi / 2, accuracy: 1e-9)
+    }
+    func testWrapsAccumulatedRotation() {
+        // 7π ≡ π (mod 2π); the short delta from 0 is +π.
+        XCTAssertEqual(Physics.shortestAngleDelta(from: 0, to: 7 * .pi), .pi, accuracy: 1e-9)
+    }
+    func testFromAccumulatedSource() {
+        // From 3π/2 to 0: short way is +π/2.
+        XCTAssertEqual(Physics.shortestAngleDelta(from: 3 * .pi / 2, to: 0), .pi / 2, accuracy: 1e-9)
+    }
+}

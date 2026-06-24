@@ -200,3 +200,27 @@ final class ConfigurationTests: XCTestCase {
         XCTAssertEqual(bounds.displacement(from: CGPoint(x: 1_000_000, y: -1_000_000)).x, 0)
     }
 }
+
+final class AngularSettleConfigurationTests: XCTestCase {
+    func testFreeHasNoTarget() {
+        XCTAssertNil(AngularSettleConfiguration.free.settleTarget(for: 1.234))
+    }
+    func testNearestPicksClosestByWrappedDistance() {
+        let cfg = AngularSettleConfiguration(snap: .nearest([0, .pi / 2]))
+        XCTAssertEqual(cfg.settleTarget(for: 0.1)!, 0, accuracy: 1e-9)
+        XCTAssertEqual(cfg.settleTarget(for: 1.4)!, .pi / 2, accuracy: 1e-9)
+    }
+    func testNearestWithAccumulatedRotation() {
+        // 7π ≡ π; nearest of {0, π} is π.
+        let cfg = AngularSettleConfiguration(snap: .nearest([0, .pi]))
+        XCTAssertEqual(cfg.settleTarget(for: 7 * .pi)!, .pi, accuracy: 1e-9)
+    }
+    func testStepPicksNearestMultiple() {
+        let cfg = AngularSettleConfiguration(snap: .step(.pi / 2))
+        XCTAssertEqual(cfg.settleTarget(for: 1.4)!, .pi / 2, accuracy: 1e-9)   // 1.4 ≈ 1.5708 nearest
+        XCTAssertEqual(cfg.settleTarget(for: -0.1)!, 0, accuracy: 1e-9)
+    }
+    func testEmptyNearestIsFree() {
+        XCTAssertNil(AngularSettleConfiguration(snap: .nearest([])).settleTarget(for: 1))
+    }
+}
