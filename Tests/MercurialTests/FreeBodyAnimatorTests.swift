@@ -114,3 +114,25 @@ final class FreeBodyAnimatorAngularTests: XCTestCase {
         XCTAssertEqual(a.pose.position, CGPoint(x: 10, y: 20))
     }
 }
+
+final class FreeBodyAnimatorSettleSafetyTests: XCTestCase {
+    func testReduceMotionSettlesInstantly() {
+        let a = FreeBodyAnimator()
+        a.reduceMotion = true
+        a.bounds = PhysicsBounds(min: .zero, max: CGPoint(x: 100, y: 100))
+        a.angularSettle = AngularSettleConfiguration(snap: .nearest([0]))
+        a.setPose(Pose(position: CGPoint(x: 130, y: 50), rotation: 0.3))
+        a.start(linearVelocity: CGPoint(x: 2000, y: 0), angularVelocity: 8)
+        XCTAssertFalse(a.isActive)                              // no frames needed
+        XCTAssertEqual(a.pose.position, CGPoint(x: 100, y: 50)) // clamped in
+        XCTAssertEqual(Physics.shortestAngleDelta(from: a.pose.rotation, to: 0), 0, accuracy: 1e-9) // snapped
+    }
+    func testRevivalDoesNotSnapOffDetentPose() {
+        // A saved spread restored verbatim: off-detent angle preserved, no update() called.
+        let off = Pose(position: CGPoint(x: 20, y: 20), rotation: 0.42)
+        let a = FreeBodyAnimator(initialPose: off)
+        a.angularSettle = AngularSettleConfiguration(snap: .nearest([0]))
+        XCTAssertEqual(a.pose, off)
+        XCTAssertFalse(a.isActive)
+    }
+}

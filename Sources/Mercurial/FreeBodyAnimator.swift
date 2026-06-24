@@ -57,6 +57,10 @@ public final class FreeBodyAnimator: @unchecked Sendable {
 
     /// Hand off both velocities; physics takes over until both channels rest.
     public func start(linearVelocity: CGPoint, angularVelocity: CGFloat) {
+        if reduceMotion {
+            settleInstantly()
+            return
+        }
         let fastEnoughLinear = Physics.speed(linearVelocity) > configuration.momentum.minimumVelocity
         let fastEnoughAngular = abs(angularVelocity) > angularSettle.engageBelow
 
@@ -76,6 +80,17 @@ public final class FreeBodyAnimator: @unchecked Sendable {
 
     /// Immediately stop (e.g. the user grabbed a settling card).
     public func stop() {
+        linearVelocity = .zero
+        angularVelocity = 0
+        state = .idle
+    }
+
+    /// Accessibility path: jump straight to the resting pose, no animation.
+    private func settleInstantly() {
+        if let bounds = bounds { pose.position = bounds.clamp(pose.position) }
+        if let target = angularSettle.settleTarget(for: pose.rotation) {
+            pose.rotation += Physics.shortestAngleDelta(from: pose.rotation, to: target)
+        }
         linearVelocity = .zero
         angularVelocity = 0
         state = .idle
