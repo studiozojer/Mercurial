@@ -169,7 +169,9 @@ public final class FreeBodyAnimator: @unchecked Sendable {
             angularVelocity *= angularSettle.friction
             if abs(angularVelocity) < 0.01 {
                 angularVelocity = 0
-                return false   // rests wherever it stopped (free), or hands to detent next frame
+                return false   // spin fully decayed → stop. With a detent + the default engageBelow,
+                               // the spring already engaged above this floor and snapped; an engageBelow
+                               // below ~0.01 would rest here unsnapped.
             }
             return true
         }
