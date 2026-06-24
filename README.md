@@ -396,6 +396,18 @@ struct MomentumScrollView: View {
 - [x] **Hit Testing** - Transform-aware hit detection with configurable hit radii
 - [ ] **Trackpad Support** - macOS trackpad gestures (scroll, pinch, rotate)
 
+### Free-body primitive
+
+`Pose` + `FreeBodyAnimator` model a free object with a transform (position +
+rotation) and momentum (linear + angular), coasting to rest with contained walls
+(`PhysicsBounds`) and an optional angular detent (`AngularSettleConfiguration`).
+Distinct from the viewport `Transform`/`GestureCoordinator` (pan/zoom) — additive,
+not a retrofit.
+
+**Evolution:** a future `FreeBodySimulation` (id-keyed, multi-body, stepping all
+bodies in one `update()` — the home for inter-body collision) is reached by having
+the simulation *own* a collection of `FreeBodyAnimator`s, not by replacing them.
+
 ## License
 
 MIT License
