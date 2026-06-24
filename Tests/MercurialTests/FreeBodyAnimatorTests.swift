@@ -136,3 +136,20 @@ final class FreeBodyAnimatorSettleSafetyTests: XCTestCase {
         XCTAssertFalse(a.isActive)
     }
 }
+
+final class FreeBodyAnimatorFrameRateTests: XCTestCase {
+    private func finalLinearSpeed(dt: CGFloat, steps: Int) -> CGFloat {
+        let cfg = PhysicsConfiguration(momentum: MomentumConfiguration(friction: 0.9))
+        let a = FreeBodyAnimator(configuration: cfg)
+        a.start(linearVelocity: CGPoint(x: 2000, y: 0), angularVelocity: 0)
+        for _ in 0..<steps { _ = a.step(deltaTime: dt) }
+        return Physics.speed(a.linearVelocity)
+    }
+    func testLinearFrictionIsFrameRateIndependent() {
+        // 0.25 s of decay, two refresh rates — should land on the same speed.
+        let at60  = finalLinearSpeed(dt: 1.0 / 60,  steps: 15)
+        let at120 = finalLinearSpeed(dt: 1.0 / 120, steps: 30)
+        XCTAssertGreaterThan(at60, 50)                       // still moving (not cut off)
+        XCTAssertEqual(at60, at120, accuracy: at60 * 0.02)   // within 2%
+    }
+}

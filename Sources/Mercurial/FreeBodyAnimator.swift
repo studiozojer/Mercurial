@@ -18,6 +18,7 @@
 //
 
 import CoreGraphics
+import Foundation
 import QuartzCore
 
 public final class FreeBodyAnimator: @unchecked Sendable {
@@ -96,6 +97,12 @@ public final class FreeBodyAnimator: @unchecked Sendable {
         state = .idle
     }
 
+    /// Per-frame decay factor for a coefficient defined per 60fps frame, scaled to `dt`.
+    /// `decay(c, 1/60) == c`; frame-rate independent.
+    private func decay(_ coeff: CGFloat, over dt: CGFloat) -> CGFloat {
+        CGFloat(pow(Double(coeff), Double(dt * 60)))
+    }
+
     // MARK: - Frame loop
 
     /// Drive one frame from the wall clock. Call from a TimelineView / display link.
@@ -145,7 +152,7 @@ public final class FreeBodyAnimator: @unchecked Sendable {
             return true
         } else {
             pose.position = Physics.integrate(position: pose.position, velocity: linearVelocity, deltaTime: dt)
-            linearVelocity = Physics.applyFriction(velocity: linearVelocity, friction: configuration.momentum.friction)
+            linearVelocity = linearVelocity * decay(configuration.momentum.friction, over: dt)
             if Physics.speed(linearVelocity) < configuration.momentum.minimumVelocity {
                 linearVelocity = .zero
                 // Came to rest; if that rest is outside bounds, let the next frame spring it.
@@ -166,7 +173,7 @@ public final class FreeBodyAnimator: @unchecked Sendable {
         if spinning || target == nil {
             // Free spin (and the only behavior when there is no detent).
             pose.rotation += angularVelocity * dt
-            angularVelocity *= angularSettle.friction
+            angularVelocity *= decay(angularSettle.friction, over: dt)
             if abs(angularVelocity) < 0.01 {
                 angularVelocity = 0
                 return false   // spin fully decayed → stop. With a detent + the default engageBelow,
