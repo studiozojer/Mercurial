@@ -94,11 +94,53 @@ public final class FreeBodyAnimator: @unchecked Sendable {
     }
 
     /// Deterministic one-frame integration (testability seam; `update` delegates here).
-    /// Channels land in A6 (linear) and A7 (angular); stub for now.
     @discardableResult
     internal func step(deltaTime: CGFloat) -> Bool {
         guard state != .idle else { return false }
-        state = .idle
-        return false
+        let dt = min(deltaTime, configuration.momentum.maxDeltaTime)
+
+        let linearActive = stepLinear(dt)
+        let angularActive = stepAngular(dt)
+
+        state = (linearActive || angularActive) ? .momentum : .idle
+        return state != .idle
     }
+
+    /// Linear momentum + boundary spring — mirrors Momentum2DAnimator's path,
+    /// operating on `pose.position`. Returns whether the linear channel is still moving.
+    private func stepLinear(_ dt: CGFloat) -> Bool {
+        let displacement = bounds?.displacement(from: pose.position) ?? .zero
+        let pastBoundary = Physics.speed(displacement) > 0.001
+
+        if pastBoundary {
+            let force = Physics.springForce(
+                displacement: displacement,
+                velocity: linearVelocity,
+                stiffness: configuration.spring.stiffness,
+                damping: configuration.spring.damping
+            )
+            linearVelocity = linearVelocity + force * dt
+            pose.position = Physics.integrate(position: pose.position, velocity: linearVelocity, deltaTime: dt)
+            let newDisplacement = bounds?.displacement(from: pose.position) ?? .zero
+            if Physics.speed(newDisplacement) < 0.5 && Physics.speed(linearVelocity) < 1 {
+                if let bounds = bounds { pose.position = bounds.clamp(pose.position) }
+                linearVelocity = .zero
+                return false
+            }
+            return true
+        } else {
+            pose.position = Physics.integrate(position: pose.position, velocity: linearVelocity, deltaTime: dt)
+            linearVelocity = Physics.applyFriction(velocity: linearVelocity, friction: configuration.momentum.friction)
+            if Physics.speed(linearVelocity) < configuration.momentum.minimumVelocity {
+                linearVelocity = .zero
+                // Came to rest; if that rest is outside bounds, let the next frame spring it.
+                let rest = bounds?.displacement(from: pose.position) ?? .zero
+                return Physics.speed(rest) > 0.001
+            }
+            return true
+        }
+    }
+
+    /// Angular channel — stub until A7 (rotation untouched).
+    private func stepAngular(_ dt: CGFloat) -> Bool { false }
 }

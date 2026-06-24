@@ -51,3 +51,34 @@ final class FreeBodyAnimatorLifecycleTests: XCTestCase {
         XCTAssertFalse(FreeBodyAnimator().update())
     }
 }
+
+final class FreeBodyAnimatorLinearTests: XCTestCase {
+    private func run(_ a: FreeBodyAnimator, steps: Int, dt: CGFloat = 1.0 / 60) {
+        for _ in 0..<steps where a.isActive { _ = a.step(deltaTime: dt) }
+    }
+    func testLinearFlickMovesAndDecays() {
+        let a = FreeBodyAnimator()
+        a.start(linearVelocity: CGPoint(x: 600, y: 0), angularVelocity: 0)
+        run(a, steps: 1)
+        XCTAssertGreaterThan(a.pose.position.x, 0)
+        let speedAfter1 = Physics.speed(a.linearVelocity)
+        run(a, steps: 1)
+        XCTAssertLessThan(Physics.speed(a.linearVelocity), speedAfter1)   // friction
+    }
+    func testLinearFlickLeavesRotationUntouched() {
+        let a = FreeBodyAnimator()
+        a.start(linearVelocity: CGPoint(x: 600, y: 0), angularVelocity: 0)
+        run(a, steps: 120)
+        XCTAssertEqual(a.pose.rotation, 0, accuracy: 1e-9)   // angular channel inert (A7)
+    }
+    func testSettlesInsideBounds() {
+        let a = FreeBodyAnimator()
+        a.bounds = PhysicsBounds(min: CGPoint(x: 0, y: 0), max: CGPoint(x: 100, y: 100))
+        a.setPose(Pose(position: CGPoint(x: 90, y: 50)))
+        a.start(linearVelocity: CGPoint(x: 1500, y: 0), angularVelocity: 0)  // flick into the wall
+        run(a, steps: 600)
+        XCTAssertFalse(a.isActive)
+        XCTAssertLessThanOrEqual(a.pose.position.x, 100.5)   // sprung back inside
+        XCTAssertGreaterThanOrEqual(a.pose.position.x, -0.5)
+    }
+}
