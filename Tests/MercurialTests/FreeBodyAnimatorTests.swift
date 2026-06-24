@@ -82,3 +82,35 @@ final class FreeBodyAnimatorLinearTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(a.pose.position.x, -0.5)
     }
 }
+
+final class FreeBodyAnimatorAngularTests: XCTestCase {
+    private func run(_ a: FreeBodyAnimator, steps: Int, dt: CGFloat = 1.0 / 60) {
+        for _ in 0..<steps where a.isActive { _ = a.step(deltaTime: dt) }
+    }
+    func testSpinEndsExactlyOnDetent() {
+        let a = FreeBodyAnimator()
+        a.angularSettle = AngularSettleConfiguration(snap: .nearest([0, .pi / 2]))
+        a.setPose(Pose(position: .zero, rotation: 0.2))
+        a.start(linearVelocity: .zero, angularVelocity: 5)   // spins forward, then eases
+        run(a, steps: 1200)
+        XCTAssertFalse(a.isActive)
+        let landed = a.angularSettle.settleTarget(for: a.pose.rotation)!
+        XCTAssertEqual(Physics.shortestAngleDelta(from: a.pose.rotation, to: landed), 0, accuracy: 1e-3)
+    }
+    func testFreeSettleRestsAtArbitraryAngle() {
+        let a = FreeBodyAnimator()              // angularSettle defaults to .free
+        a.setPose(Pose(position: .zero, rotation: 0.37))
+        a.start(linearVelocity: .zero, angularVelocity: 4)
+        run(a, steps: 1200)
+        XCTAssertFalse(a.isActive)
+        // No detent: rotation simply stopped somewhere, not snapped to a grid.
+        XCTAssertNotEqual(a.pose.rotation, 0, accuracy: 1e-6)
+    }
+    func testAngularFlickLeavesPositionUntouched() {
+        let a = FreeBodyAnimator()
+        a.setPose(Pose(position: CGPoint(x: 10, y: 20), rotation: 0))
+        a.start(linearVelocity: .zero, angularVelocity: 6)
+        run(a, steps: 300)
+        XCTAssertEqual(a.pose.position, CGPoint(x: 10, y: 20))
+    }
+}

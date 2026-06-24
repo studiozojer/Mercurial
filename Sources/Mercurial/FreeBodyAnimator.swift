@@ -141,6 +141,40 @@ public final class FreeBodyAnimator: @unchecked Sendable {
         }
     }
 
-    /// Angular channel — stub until A7 (rotation untouched).
-    private func stepAngular(_ dt: CGFloat) -> Bool { false }
+    /// Angular momentum settle. Two phases: free spin while fast, then a spring toward
+    /// the nearest detent once the spin drops under `engageBelow`. Returns whether the
+    /// angular channel is still moving.
+    private func stepAngular(_ dt: CGFloat) -> Bool {
+        let spinning = abs(angularVelocity) > angularSettle.engageBelow
+        let target = angularSettle.settleTarget(for: pose.rotation)
+
+        if spinning || target == nil {
+            // Free spin (and the only behavior when there is no detent).
+            pose.rotation += angularVelocity * dt
+            angularVelocity *= angularSettle.friction
+            if abs(angularVelocity) < 0.01 {
+                angularVelocity = 0
+                return false   // rests wherever it stopped (free), or hands to detent next frame
+            }
+            return true
+        }
+
+        // Detent ease: spring rotation toward the nearest target the short way.
+        let delta = Physics.shortestAngleDelta(from: pose.rotation, to: target!)
+        let force = Physics.springForce(
+            displacement: -delta,                 // displacement from rest = -(rest - current)
+            velocity: angularVelocity,
+            stiffness: angularSettle.stiffness,
+            damping: angularSettle.damping
+        )
+        angularVelocity += force * dt
+        pose.rotation += angularVelocity * dt
+
+        if abs(delta) < 0.001 && abs(angularVelocity) < 0.01 {
+            pose.rotation += Physics.shortestAngleDelta(from: pose.rotation, to: target!)  // snap exact
+            angularVelocity = 0
+            return false
+        }
+        return true
+    }
 }
