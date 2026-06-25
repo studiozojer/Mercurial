@@ -117,7 +117,7 @@ public final class FreeBodyAnimator: @unchecked Sendable {
 
     /// Deterministic one-frame integration (testability seam; `update` delegates here).
     @discardableResult
-    internal func step(deltaTime: CGFloat) -> Bool {
+    public func step(deltaTime: CGFloat) -> Bool {
         guard state != .idle else { return false }
         let dt = min(deltaTime, configuration.momentum.maxDeltaTime)
 
