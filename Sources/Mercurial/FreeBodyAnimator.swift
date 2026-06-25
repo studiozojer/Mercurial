@@ -116,6 +116,9 @@ public final class FreeBodyAnimator: @unchecked Sendable {
     }
 
     /// Deterministic one-frame integration (testability seam; `update` delegates here).
+    /// Drives integration only — it does NOT touch the wall clock (`lastUpdateTime`,
+    /// owned by `start`/`update`). Drive a given instance with either `step` (fixed
+    /// timestep) or `update` (wall clock), not both interleaved.
     @discardableResult
     public func step(deltaTime: CGFloat) -> Bool {
         guard state != .idle else { return false }
